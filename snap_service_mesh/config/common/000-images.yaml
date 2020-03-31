@@ -1,0 +1,100 @@
+###
+### Docker common images
+###
+image-common:
+  default:
+    gcp_image_reg: gcr.io/api-gateway-dev
+    # snap-mesh-images account
+    aws_image_reg: 729677352544.dkr.ecr.us-east-1.amazonaws.com
+  gcp:
+    default:
+      image_reg: ${GCP_IMAGE_REG}
+  aws:
+    default:
+      image_reg: ${AWS_IMAGE_REG}
+
+image-sidecar:
+  metadata:
+    prefix: image-sidecar
+  default:
+    repo: sidecar
+    tag: v1.12.3-507.0373191c.a13d52f4
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-sidecar-init:
+  metadata:
+    prefix: image-sidecar-init
+  default:
+    repo: sidecar-init
+    tag: v0.1.6
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-rotatelogs:
+  metadata:
+    prefix: image-rotatelogs
+  default:
+    repo: rotatelogs
+    tag: jenkins-release-2015-master-e9f8fad-20180925
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-auth:
+  metadata:
+    prefix: image-auth-sidecar
+  default:
+    repo: auth-sidecar
+    tag: v1.16.5
+    id: \.repo:\.tag
+    fqn: gcr.io/security-mesh-images/\.repo:\.tag
+    registry: gcr.io/security-mesh-images
+  aws:
+    default:
+      fqn: 496756745489.dkr.ecr.us-east-1.amazonaws.com/\.repo:\.tag
+      registry: 496756745489.dkr.ecr.us-east-1.amazonaws.com
+
+image-pubsub:
+  metadata:
+    prefix: image-statsd-pubsub
+  default:
+    repo: statsd-pubsub
+    tag: v1.1.0-131.cd6b8ba5
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-fluentd:
+  metadata:
+    prefix: image-fluentd
+  default:
+    repo: fluentd
+    tag: v1.1.0-96.ea6d7cc3
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-iplimit:
+  metadata:
+    prefix: image-iplimit
+  default:
+    repo: iplimit
+    tag: dev-700
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-cluster-health:
+  metadata:
+    prefix: image-cluster-health
+  default:
+    repo: cluster-health
+    tag: v1.1.0-21.5b07553e
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag
+
+image-metrics-scraper:
+  metadata:
+    prefix: image-metricscraper
+  default:
+    repo: metricscraper
+    tag: latest
+    id: \.repo:\.tag
+    fqn: \.image_reg/\.repo:\.tag

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  labels:
+    app: temporal
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+    spec:
+      containers:
+        # [START proxy_container]
+        - name: cloudsql-proxy
+          image: gcr.io/cloudsql-docker/gce-proxy:1.14
+          command: ["/cloud_sql_proxy",
+                    "-instances=teamko619:us-central1:cadence-db=tcp:3306",
+                    "-credential_file=/secrets/cloudsql/key.json"]
+          # [START cloudsql_security_context]
+          securityContext:
+            runAsUser: 2  # non-root user
+            allowPrivilegeEscalation: false
+          # [END cloudsql_security_context]
+          volumeMounts:
+            - name: cloudsql-instance-credentials
+              mountPath: /secrets/cloudsql
+              readOnly: true
+        # [END proxy_container]
+        - name: temporal
+          image: temporalio/server:0.20.0
+          imagePullPolicy: ""
+          ports:
+            - containerPort: 7233
+          env:
+            - name: NUM_HISTORY_SHARDS
+              value: "128"
+            - name: DB
+              value: mysql
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: config/dynamicconfig/development.yaml
+            - name: MYSQL_PWD
+              valueFrom:
+                  secretKeyRef:
+                    name: cloudsql-db-credentials
+                    key: password
+            - name: MYSQL_SEEDS
+              value: 127.0.0.1
+            - name: MYSQL_USER
+              valueFrom:
+                  secretKeyRef:
+                    name: cloudsql-db-credentials
+                    key: username
+            - name: MYSQL_TX_ISOLATION_COMPAT
+              value: "true"
+            - name: STATSD_ENDPOINT
+              value: statsd:8125
+
+      # [START volumes]
+      volumes:
+        - name: cloudsql-instance-credentials
+          secret:
+            secretName: cloudsql-instance-credentials
+      # [END volumes]

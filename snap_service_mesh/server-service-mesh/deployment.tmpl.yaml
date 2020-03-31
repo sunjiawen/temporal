@@ -1,0 +1,171 @@
+# Deployment template having a sample http container, and the rest of common containers defined
+# with default configurations that you can use directly as is
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Env.SERVICE_NAME }}
+spec:
+  # You can set additional deployment configurations here
+  replicas: {{ default .Env.REPLICA_COUNT "1" }}
+  progressDeadlineSeconds: 120  # Wait for 2 minutes before declaring the deployment as failed
+  minReadySeconds: 30           # Containers should be stable and in ready state for at least 30 seconds before they are considered available
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1         # Create up to 1 additional pod at a time
+      maxUnavailable: 1   # Allow maximum of 1 unavailable pod at a time
+  selector:
+    matchLabels:
+      app: {{ .Env.SERVICE_NAME }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Env.SERVICE_NAME }}
+    spec:
+      containers:
+
+      # Templated out per-service, specify with $CONTAINER_TEMPLATE when calling deploy script
+{{ .Env.SERVICE_YAML }}
+
+      # Envoy sidecar enforces traffic policies and handles auth sign/verify by delegating to auth sidecar
+      # Envoy configs are retrieved from control-plane as configured in Switchboard
+      - name: sidecar
+        image: {{ .Env.IMAGE_SIDECAR_FQN }}
+        imagePullPolicy: IfNotPresent
+        env:
+        # Identifier for the cluster that Envoy presents to control-plane to retrive its resources as configured in Switchboard
+        # This follows the format: cluster.[service].[xds-cluster].[provider]-[region]. The value to use is displayed at
+        # Switchboard for each configured cluster. E.g: cluster.friends.eks-dev-01.aws-us-east-1
+        - name: XDS_CLUSTER_NAME
+          value: {{ .Env.XDS_CLUSTER_NAME }}
+        # Possible values: prod | staging. This is used to define which control plane to get configs from
+        - name: ENVIRONMENT
+          value: {{ default .Env.ENVIRONMENT "prod" }}
+        - name: SDS_ENABLED
+          value: "1"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: mesh-creds
+          mountPath: /credentials
+
+      # Auth sidecar works together with Envoy sidecar to authenticate incoming requests
+      - name: auth-sidecar
+        image: {{ .Env.IMAGE_AUTH_SIDECAR_FQN }}
+        imagePullPolicy: IfNotPresent
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8086
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 8086
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: auth-sidecar-configmap
+          mountPath: /etc/config
+        - name: mesh-creds
+          mountPath: /credentials
+        - name: fallback-config
+          mountPath: /etc/fallback
+
+      {{ if isTrue .Env.ENABLE_STATSD }}
+      # StatsD publishes application metrics to Snap's metrics pipeline
+      - name: statsd
+        image: {{ .Env.IMAGE_STATSD_PUBSUB_FQN }}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        ports:
+        - name: statsd-port
+          containerPort: 8125
+        readinessProbe:
+          tcpSocket:
+            port: statsd-port
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: statsd-port
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+        - name: DEBUG
+          value: "false"
+        - name: LOG_TO_STDOUT
+          value: "false"
+        - name: METRICS_PREFIX
+          value: {{ .Env.METRICS_PREFIX }}
+        - name: CLUSTER_NAME
+          value: {{ .Env.SWITCHBOARD_CLUSTER }}
+        - name: FLUSH_INTERVAL
+          value: "3000"
+        - name: GRACE_PERIOD_SEC
+          value: "30"
+      {{ end }}
+
+
+      # Init container needed to configure the pod for Envoy to intercept incoming traffic, and resolve calls
+      # to service.snap domains to go through Envoy egress routes
+      initContainers:
+      - name: sidecar-init
+        image: {{ .Env.IMAGE_SIDECAR_INIT_FQN }}
+        imagePullPolicy: IfNotPresent
+        env:
+        # The set of ports to exclude intercepting traffic for. E.g. 8086 configured for auth-sidecar health checks
+        # Add other health-checked containers here
+        - name: INTERCEPT_EXCLUDE_PORTS
+          value: "8086 8125"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          privileged: true
+
+      # Refer to the following doc for auth-sidecar onboarding:
+      # https://wiki.sc-corp.net/display/INF/Auth+Sidecar+Onboarding
+      - name: auth-sidecar-init
+        image: {{ .Env.IMAGE_AUTH_SIDECAR_FQN }}
+        imagePullPolicy: IfNotPresent
+        env:
+          # Indicates that the configmap for the init auth sidecar is named sidecar-init
+          # See auth-sidecar-configmap.tmpl.yaml
+          - name: AUTH_SIDECAR_CONFIG_FILENAME
+            value: sidecar-init
+        volumeMounts:
+        - name: auth-sidecar-configmap
+          mountPath: /etc/config
+        - name: mesh-creds
+          mountPath: /credentials
+
+      # Volume mounts for auth-sidecar configmap needed for auth-sidecar, also for mysql connection proxy.
+      volumes:
+      - name: auth-sidecar-configmap
+        configMap:
+          name: auth-sidecar-configmap
+      - name: mesh-creds
+        emptyDir: {}
+      - name: fallback-config
+        configMap:
+          name: fallback
+          optional: true
+      - name: cloudsql-instance-credentials
+        secret:
+          secretName: cloudsql-instance-credentials

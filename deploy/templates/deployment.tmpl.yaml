@@ -1,0 +1,177 @@
+# Deployment template having a sample httpbin container, and the rest of common containers defined
+# with default configurations that you can use directly as is
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Env.SERVICE_NAME }}
+spec:
+  # You can set additional deployment configurations here
+  replicas: {{ default .Env.REPLICA_COUNT "2" }}
+  progressDeadlineSeconds: 120  # Wait for 2 minutes before declaring the deployment as failed
+  minReadySeconds: 30           # Containers should be stable and in ready state for at least 30 seconds before they are considered available
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1         # Create up to 1 additional pod at a time
+      maxUnavailable: 1   # Allow maximum of 1 unavailable pod at a time
+  selector:
+    matchLabels:
+      app: {{ .Env.SERVICE_NAME }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Env.SERVICE_NAME }}
+    spec:
+      containers:
+
+      # Replace the container below with your actual service container details.
+      # For an example, we use httpbin to ping request info
+      - name: {{ .Env.SERVICE_NAME }}
+        image: {{ .Env.SERVICE_IMAGE }}
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8080
+        resources:
+          requests:
+            memory: "16Gi"
+            cpu: 8
+          limits:
+            memory: "32Gi"
+            cpu: 16
+        volumeMounts:
+          - name: caterpie-configmap
+            mountPath: /app/configs
+        env:
+          - name: JAVA_OPTS
+            value: -XX:+UseG1GC -XX:MaxGCPauseMillis=45 -XX:G1ReservePercent=20 -Xmx32G -Xms16G
+
+        # StatsD publishes application metrics to Snap's metrics pipeline
+      - name: statsd
+        image: {{ .Env.IMAGE_STATSD}}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        ports:
+          - name: statsd-port
+            containerPort: 8125
+        readinessProbe:
+          tcpSocket:
+            port: statsd-port
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: statsd-port
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+          - name: DEBUG
+            value: "false"
+          - name: LOG_TO_STDOUT
+            value: "false"
+          - name: METRICS_PREFIX
+            value: AdsAPI
+          - name: CLUSTER_NAME
+            value: caterpie-dev
+          - name: FLUSH_INTERVAL
+            value: "3000"
+          - name: GRACE_PERIOD_SEC
+            value: "30"
+
+      # Envoy sidecar enforces traffic policies and handles auth sign/verify by delegating to auth sidecar
+      # Envoy configs are retrieved from control-plane as configured in Switchboard
+      - name: sidecar
+        image: {{ .Env.IMAGE_SIDECAR }}
+        imagePullPolicy: Always
+        env:
+        # Identifier for the cluster that Envoy presents to control-plane to retrive its resources as configured in Switchboard
+        # This follows the format: cluster.[service].[xds-cluster].[provider]-[region]. The value to use is displayed at
+        # Switchboard for each configured cluster. E.g: cluster.friends.eks-dev-01.aws-us-east-1
+        - name: XDS_CLUSTER_NAME
+          value: {{ .Env.XDS_CLUSTER_NAME }}
+        # Possible values: prod | staging. This is used to define which control plane to get configs from
+        - name: ENVIRONMENT
+          value: prod
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: mesh-creds
+          mountPath: /credentials
+
+
+      # Refer to the following doc for auth-sidecar onboarding:
+      # https://wiki.sc-corp.net/display/INF/Auth+Sidecar+Onboarding
+      - name: auth-sidecar
+        image: {{ .Env.IMAGE_AUTH_SIDECAR }}
+        imagePullPolicy: Always
+        readinessProbe:
+          tcpSocket:
+            port: 8086
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: 8086
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: auth-sidecar-configmap
+          mountPath: /etc/config
+        - name: mesh-creds
+          mountPath: /credentials
+
+      # Init container needed to configure the pod for Envoy to intercept incoming traffic, and resolve calls
+      # to service.snap domains to go through Envoy egress routes
+      initContainers:
+      - name: sidecar-init
+        image: {{ .Env.IMAGE_SIDECAR_INIT }}
+        imagePullPolicy: Always
+        env:
+        # The set of ports to exclude intercepting traffic for. E.g. 8086 configured for auth-sidecar health checks
+        # Add other health-checked containers here
+        - name: INTERCEPT_EXCLUDE_PORTS
+          value: "8086 8125"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          privileged: true
+
+      # Refer to the following doc for auth-sidecar onboarding:
+      # https://wiki.sc-corp.net/display/INF/Auth+Sidecar+Onboarding
+      - name: auth-sidecar-init
+        image: {{ .Env.IMAGE_AUTH_SIDECAR }}
+        env:
+          # Indicates that the configmap for the init auth sidecar is named sidecar-init
+          # See auth-sidecar-configmap.tmpl.yaml
+          - name: AUTH_SIDECAR_CONFIG_FILENAME
+            value: sidecar-init
+        volumeMounts:
+        - name: auth-sidecar-configmap
+          mountPath: /etc/config
+        - name: mesh-creds
+          mountPath: /credentials
+
+      # Volume mounts for async-srs, auth-sidecar configmap needed for auth-sidecar
+      volumes:
+      - name: caterpie-configmap
+        configMap:
+          name: caterpie-configmap
+      - name: auth-sidecar-configmap
+        configMap:
+          name: auth-sidecar-configmap
+      - name: mesh-creds
+        emptyDir: {}

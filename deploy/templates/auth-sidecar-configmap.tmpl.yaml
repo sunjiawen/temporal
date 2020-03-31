@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-sidecar-configmap
+data:
+  # This configmap configures the Auth Sidecar when running as a standard container
+  # For more examples see: https://github.sc-corp.net/Snapchat/auth-sidecar/tree/master/examples
+  sidecar.yaml: |-
+    required:
+      platform: PLATFORM_{{ upper .Env.PROVIDER }}
+      volumePath: "/credentials" # Must match the volume path specified in deployment.tmpl.yaml
+      serviceIdentity: [ "{{ .Env.SERVICE_NAME }}" ]
+      # lcaIssuer: Provide this value if your LCA issuer is not the same as the native platform identity
+    optional: # Allows for optional configurations. Default values used unless otherwise specified
+      clusterStage: {{ .Env.CLUSTER_STAGE }}
+
+  # This configmap configures the Auth Sidecar when running as an init container
+  sidecar-init.yaml: |-
+    required:
+      platform: PLATFORM_{{ upper .Env.PROVIDER }}
+      volumePath: "/credentials"
+      serviceIdentity: [ "{{ .Env.SERVICE_NAME }}" ]
+    optional: # Allows for optional configurations. Default values used unless otherwise specified
+      clusterStage: {{ .Env.CLUSTER_STAGE }}
+    init:
+      tls: true # tells the container to fetch and mounts TLS certificates

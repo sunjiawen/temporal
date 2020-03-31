@@ -1,0 +1,34 @@
+###
+### Common Helm Charts
+###
+main:
+  default:
+    gcs_helm_repo: k8s-helm-artifacts
+
+chart-fluentd:
+  metadata:
+    prefix: chart_k8s_fluentd_daemonset
+  default:
+    name: k8s-fluentd-daemonset
+    tag: 0.1.94-release+jenkins-master-b4d4877-20191119
+
+chart-iplimit:
+  metadata:
+    prefix: chart_k8s_iplimit_daemonset
+  default:
+    name: k8s-iplimit-daemonset
+    tag: 0.1.33-release+jenkins-master-68686a5-20190312
+
+chart-cadvisor:
+  metadata:
+    prefix: chart_k8s_cadvisor_daemonset
+  default:
+    name: k8s-cadvisor-daemonset
+    tag: 0.1.42-release+jenkins-master-ba6d653-20191111
+
+chart-cluster-health:
+  metadata:
+    prefix: chart_k8s_cluster_health
+  default:
+    name: k8s-cluster-health
+    tag: 0.1.12-release+jenkins-master-aaebd51-20191106

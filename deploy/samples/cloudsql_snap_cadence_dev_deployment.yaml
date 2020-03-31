@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cadence
+  labels:
+    app: cadence
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: cadence
+  template:
+    metadata:
+      labels:
+        app: cadence
+    spec:
+      containers:
+        # Change <INSTANCE_CONNECTION_NAME> here to include your GCP
+        # project, the region of your Cloud SQL instance and the name
+        # of your Cloud SQL instance. The format is
+        # $PROJECT:$REGION:$INSTANCE
+        # [START proxy_container]
+        - name: cloudsql-proxy
+          image: gcr.io/cloudsql-docker/gce-proxy:1.14
+          command: ["/cloud_sql_proxy",
+                    "-instances=snap-cadence-dev:us-central1:cadence-db=tcp:3306",
+                    "-credential_file=/secrets/cloudsql/key.json"]
+          # [START cloudsql_security_context]
+          securityContext:
+            runAsUser: 2  # non-root user
+            allowPrivilegeEscalation: false
+          # [END cloudsql_security_context]
+          volumeMounts:
+            - name: cloudsql-instance-credentials
+              mountPath: /secrets/cloudsql
+              readOnly: true
+        # [END proxy_container]
+        - name: cadence
+          image: ubercadence/server:0.11.0-auto-setup
+          ports:
+            - containerPort: 7933
+            - containerPort: 7934
+            - containerPort: 7935
+            - containerPort: 7939
+          env:
+            - name: NUM_HISTORY_SHARDS
+              value: "128"
+            - name: RINGPOP_BOOTSTRAP_MODE
+              value: hosts
+            - name: RINGPOP_SEEDS
+              value: 10.53.34.77:17933
+            - name: DB
+              value: mysql
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: config/dynamicconfig/development.yaml
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-db-credentials
+                  key: password
+            - name: MYSQL_SEEDS
+              value: 127.0.0.1
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-db-credentials
+                  key: username
+            - name: MYSQL_TX_ISOLATION_COMPAT
+              value: "true"
+            - name: STATSD_ENDPOINT
+              value: statsd:8125
+
+      # [START volumes]
+      volumes:
+        - name: cloudsql-instance-credentials
+          secret:
+            secretName: cloudsql-instance-credentials
+      # [END volumes]

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cadence-web
+  labels:
+    app: cadence-web
+spec:
+  ports:
+  - name: "8088"
+    port: 8088
+    targetPort: 8088
+  selector:
+    matchLabels:
+      app: cadence-web
+status:
+  loadBalancer: {}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cadence-headless
+  labels:
+    app: cadence
+spec:
+  clusterIP: None
+  selector:
+    app: cadence
+  ports:
+    - protocol: TCP
+      port: 17933
+      targetPort: 7933

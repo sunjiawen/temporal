@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kompose.cmd: kompose convert
+    kompose.version: 1.21.0 ()
+  creationTimestamp: null
+  labels:
+    io.kompose.service: temporal
+  name: temporal
+spec:
+  ports:
+  - name: "7233"
+    port: 7233
+    targetPort: 7233
+  - name: "7234"
+    port: 7234
+    targetPort: 7234
+  - name: "7235"
+    port: 7235
+    targetPort: 7235
+  - name: "7239"
+    port: 7239
+    targetPort: 7239
+  - name: "6933"
+    port: 6933
+    targetPort: 6933
+  - name: "6934"
+    port: 6934
+    targetPort: 6934
+  - name: "6935"
+    port: 6935
+    targetPort: 6935
+  - name: "6939"
+    port: 6939
+    targetPort: 6939
+  selector:
+    io.kompose.service: temporal
+status:
+  loadBalancer: {}

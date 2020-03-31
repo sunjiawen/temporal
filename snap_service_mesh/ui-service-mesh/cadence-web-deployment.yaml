@@ -1,0 +1,123 @@
+# Deployment yaml for AutoPilot Frontend
+# TODO(hank): templatize this so we can reuse constants (i.e. /credential path, service identity, etc)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cadence-ui
+spec:
+  # You can set additional deployment configurations here
+  replicas: 1
+  progressDeadlineSeconds: 120  # Wait for 2 minutes before declaring the deployment as failed
+  minReadySeconds: 30           # Containers should be stable and in ready state for at least 30 seconds before they are considered available
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1         # Create up to 1 additional pod at a time
+      maxUnavailable: 1   # Allow maximum of 1 unavailable pod at a time
+  selector:
+    matchLabels:
+      app: cadence-ui
+  template:
+    metadata:
+      labels:
+        app: cadence-ui
+    spec:
+      containers:
+
+        - name: cadence-ui
+          image: ubercadence/web:3.4.1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8088
+          env:
+            - name: CADENCE_TCHANNEL_PEERS
+              value: 10.53.34.77:17933
+
+        # Envoy sidecar enforces traffic policies and handles auth sign/verify by delegating to auth sidecar
+        # Envoy configs are retrieved from control-plane as configured in Switchboard
+        - name: sidecar
+          image: 729677352544.dkr.ecr.us-east-1.amazonaws.com/sidecar:v1.12.2-456.18ee698c.978eca26
+          imagePullPolicy: Always
+          env:
+            # Identifier for the cluster that Envoy presents to control-plane to retrive its resources as configured in Switchboard
+            # This follows the format: cluster.[service].[xds-cluster].[provider]-[region]. The value to use is displayed at
+            # Switchboard for each configured cluster. E.g: cluster.friends.eks-dev-01.aws-us-east-1
+            - name: XDS_CLUSTER_NAME
+              value: cluster.cadence-ui.prod.aws-us-west-2
+            # Possible values: prod | staging. This is used to define which control plane to get configs from
+            - name: ENVIRONMENT
+              value: prod
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: mesh-creds
+              mountPath: /credentials
+
+
+        # Auth sidecar works together with Envoy sidecar to authenticate incoming requests
+        - name: auth-sidecar
+          image: 496756745489.dkr.ecr.us-west-2.amazonaws.com/auth-sidecar:v1.15.1
+          imagePullPolicy: Always
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8086
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8086
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - name: auth-sidecar-configmap
+              mountPath: /etc/config
+            - name: mesh-creds
+              mountPath: /credentials
+
+
+      # Init container needed to configure the pod for Envoy to intercept incoming traffic, and resolve calls
+      # to service.snap domains to go through Envoy egress routes
+      initContainers:
+        - name: sidecar-init
+          image: 729677352544.dkr.ecr.us-east-1.amazonaws.com/sidecar-init:v0.1.6
+          imagePullPolicy: Always
+          env:
+            # The set of ports to exclude intercepting traffic for. E.g. 8086 configured for auth-sidecar health checks
+            # Add other health-checked containers here
+            - name: INTERCEPT_EXCLUDE_PORTS
+              value: "8086"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+            privileged: true
+
+        # Refer to the following doc for auth-sidecar onboarding:
+        # https://wiki.sc-corp.net/display/INF/Auth+Sidecar+Onboarding
+        - name: auth-sidecar-init
+          image: 496756745489.dkr.ecr.us-west-2.amazonaws.com/auth-sidecar:v1.15.1
+          imagePullPolicy: Always
+          env:
+            # Indicates that the configmap for the init auth sidecar is named sidecar-init
+            # See auth-sidecar-configmap.tmpl.yaml
+            - name: AUTH_SIDECAR_CONFIG_FILENAME
+              value: sidecar-init
+          volumeMounts:
+            - name: auth-sidecar-configmap
+              mountPath: /etc/config
+            - name: mesh-creds
+              mountPath: /credentials
+
+      # Volume mounts for auth-sidecar configmap needed for auth-sidecar
+      volumes:
+        - name: auth-sidecar-configmap
+          configMap:
+            name: auth-sidecar-configmap
+        - name: mesh-creds
+          emptyDir: {}

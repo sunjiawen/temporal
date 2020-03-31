@@ -1,0 +1,9 @@
+      # maintain the spacing in this file to keep it in line when it gets templated into the deployment.yaml
+      - name: {{ .Env.SERVICE_NAME }}
+        image: ubercadence/web:3.4.1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8088
+        env:
+        - name: CADENCE_TCHANNEL_PEERS
+          value: 10.53.34.77:17933

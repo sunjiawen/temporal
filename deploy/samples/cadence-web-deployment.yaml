@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cadence-web
+  labels:
+    app: cadence-web
+spec:
+  selector:
+    matchLabels:
+      app: cadence-web
+  template:
+    metadata:
+      labels:
+        app: cadence-web
+    spec:
+      containers:
+      - env:
+        - name: CADENCE_TCHANNEL_PEERS
+          value: 35.222.85.170:30201
+        image: ubercadence/web:3.4.1
+        name: cadence-web
+        ports:
+        - containerPort: 8088
+        resources: {}
+      restartPolicy: Always
+status: {}

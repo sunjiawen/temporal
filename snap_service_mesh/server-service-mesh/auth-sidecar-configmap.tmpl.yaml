@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-sidecar-configmap
+data:
+  # This configmap configures the Auth Sidecar when running as a standard container
+  sidecar.yaml: |-
+    required:
+      platform: PLATFORM_{{ upper .Env.PROVIDER }}
+      volumePath: "/credentials" # Must match the volume path specified in deployment.tmpl.yaml
+      serviceIdentity: [ "{{ .Env.SERVICE_NAME }}" ]
+      # lcaIssuer: Provide this value if your LCA issuer is not the same as the native platform identity
+    # Allows for optional configurations. Default values used unless otherwise specified
+    optional:
+      # environment: Defaults to ENVIRONMENT_PROD - use ENVIRONMENT_DEV when running in the staging mesh
+      {{- if .Env.ENVIRONMENT }}{{ if eq .Env.ENVIRONMENT "staging" }}
+      environment: ENVIRONMENT_DEV
+      {{- end }}{{ end }}
+      # lcaAddress: Defaults to 127.0.0.1
+      # lcaPort: Defaults to 50052
+      # lcaMaxConcurrentStreams: Defaults to 2000
+      # lcaPrefetchIntervalSeconds: Defaults to 20
+      # healthcheckPort: Defaults to 8086
+      clusterStage: STAGE_{{ upper .Env.STAGE }}
+      # gracePeriodSeconds: Defaults to 60 - use to configure how long auth sidecar waits before shutting down
+
+  # This configmap configures the Auth Sidecar when running as an init container
+  sidecar-init.yaml: |-
+    required:
+      platform: PLATFORM_{{ upper .Env.PROVIDER }}
+      volumePath: "/credentials"
+      serviceIdentity: [ "{{ .Env.SERVICE_NAME }}" ]
+    # Allows for optional configurations. Default values used unless otherwise specified
+    optional:
+      # environment: Defaults to ENVIRONMENT_PROD - use ENVIRONMENT_DEV when running in the staging mesh
+      {{- if .Env.ENVIRONMENT }}{{ if eq .Env.ENVIRONMENT "staging" }}
+      environment: ENVIRONMENT_DEV
+      {{- end }}{{ end }}
+      clusterStage: STAGE_{{ upper .Env.STAGE }}
+    # These fields make the car run as a short-lived container for initializing state
+    init:
+      tls: true # tells the container to fetch and mounts TLS certificates
